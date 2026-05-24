@@ -1,594 +1,331 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Dimensions } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
-import { ArrowLeft, Star, MapPin, User, Calendar, Clock, Shield, Heart, Share, Phone, MessageCircle } from 'lucide-react-native';
-import { useAppStore } from '../../store/useAppStore';
+import {
+  ArrowLeft,
+  Calendar,
+  Star,
+  Tractor,
+  User,
+} from 'lucide-react-native';
+import { ApiError } from '@/services/apiClient';
+import { formatApiDateTime, toApiDateTime } from '@/lib/dates';
+import * as resourceService from '@/services/resourceService';
+import { useAuthStore } from '@/store/authStore';
+import {
+  bookingsForResource,
+  useBookingStore,
+} from '@/store/bookingStore';
+import { useResourceStore } from '@/store/resourceStore';
+import type { ResourceDisplay } from '@/types/api';
 
-const { width } = Dimensions.get('window');
+const PLACEHOLDER_IMAGE =
+  'https://images.pexels.com/photos/96715/pexels-photo-96715.jpeg?auto=compress&cs=tinysrgb&w=800';
 
-export default function EquipmentDetailScreen() {
-  const { id } = useLocalSearchParams();
-  const { equipment } = useAppStore();
-  const [currentImageIndex, setCurrentImageIndex] = useState(0);
-  const [selectedDuration, setSelectedDuration] = useState<'hour' | 'day'>('hour');
+export default function ResourceDetailScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const resourceId = Number(id);
 
-  const equipmentItem = equipment.find(item => item.id === id);
+  const user = useAuthStore((s) => s.user);
+  const role = useAuthStore((s) => s.role);
+  const getById = useResourceStore((s) => s.getById);
+  const fetchResources = useResourceStore((s) => s.fetchResources);
+  const bookings = useBookingStore((s) => s.bookings);
+  const fetchBookings = useBookingStore((s) => s.fetchBookings);
+  const createBooking = useBookingStore((s) => s.createBooking);
 
-  if (!equipmentItem) {
+  const [resource, setResource] = useState<ResourceDisplay | null>(
+    () => getById(resourceId) ?? null
+  );
+  const [loading, setLoading] = useState(!resource);
+  const [bookingLoading, setBookingLoading] = useState(false);
+
+  useEffect(() => {
+    fetchResources();
+    fetchBookings();
+  }, [fetchResources, fetchBookings]);
+
+  useEffect(() => {
+    const cached = getById(resourceId);
+    if (cached) {
+      setResource(cached);
+      setLoading(false);
+      return;
+    }
+
+    if (!Number.isFinite(resourceId)) {
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const raw = await resourceService.getResourceById(resourceId);
+        if (!cancelled) {
+          setResource({
+            ...raw,
+            ownerName: `Owner #${raw.ownerId}`,
+            averageRating: null,
+            reviewCount: 0,
+          });
+        }
+      } catch {
+        if (!cancelled) setResource(null);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [resourceId, getById]);
+
+  const schedule = useMemo(
+    () => bookingsForResource(bookings, resourceId),
+    [bookings, resourceId]
+  );
+
+  const handleReserve = () => {
+    if (!user) {
+      Alert.alert('Sign in required', 'Please log in as a farmer to reserve.');
+      return;
+    }
+    if (role !== 'farmer') {
+      Alert.alert(
+        'Farmers only',
+        'Only farmer accounts can create reservations.'
+      );
+      return;
+    }
+
+    const start = new Date();
+    start.setDate(start.getDate() + 1);
+    start.setHours(9, 0, 0, 0);
+    const end = new Date(start);
+    end.setHours(17, 0, 0, 0);
+
+    Alert.alert(
+      'Confirm reservation',
+      `Reserve "${resource?.name}" for tomorrow 9:00 AM – 5:00 PM?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reserve',
+          onPress: async () => {
+            setBookingLoading(true);
+            try {
+              await createBooking({
+                resourceId,
+                userId: user.id,
+                startTime: toApiDateTime(start),
+                endTime: toApiDateTime(end),
+              });
+              Alert.alert(
+                'Request sent',
+                'Your booking is pending owner approval.'
+              );
+              router.push('/(app)/(tabs)/bookings');
+            } catch (err) {
+              Alert.alert(
+                'Booking failed',
+                err instanceof ApiError
+                  ? err.message
+                  : 'Could not create reservation'
+              );
+            } finally {
+              setBookingLoading(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  if (loading) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>Equipment not found</Text>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <Text style={styles.backButtonText}>Go Back</Text>
-          </TouchableOpacity>
+        <ActivityIndicator style={styles.centered} size="large" color="#A4D65E" />
+      </SafeAreaView>
+    );
+  }
+
+  if (!resource) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.centered}>
+          <Text style={styles.errorText}>Resource not found</Text>
+          <Pressable style={styles.backBtn} onPress={() => router.back()}>
+            <Text style={styles.backBtnText}>Go back</Text>
+          </Pressable>
         </View>
       </SafeAreaView>
     );
   }
 
-  const handleBookNow = () => {
-    // Navigate to booking screen or show booking modal
-    console.log('Book equipment:', equipmentItem.id);
-  };
-
-  const handleContactOwner = () => {
-    // Navigate to chat or show contact options
-    console.log('Contact owner:', equipmentItem.owner.id);
-  };
-
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
+        <Pressable onPress={() => router.back()} style={styles.headerBtn}>
           <ArrowLeft size={24} color="#1F2937" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Equipment Details</Text>
-        <View style={styles.headerActions}>
-          <TouchableOpacity style={styles.headerButton}>
-            <Heart size={24} color="#1F2937" />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.headerButton}>
-            <Share size={24} color="#1F2937" />
-          </TouchableOpacity>
-        </View>
+        </Pressable>
+        <Text style={styles.headerTitle} numberOfLines={1}>
+          {resource.name}
+        </Text>
+        <View style={styles.headerBtn} />
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Image Carousel */}
-        <View style={styles.imageContainer}>
-          <ScrollView
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            onMomentumScrollEnd={(event) => {
-              const index = Math.round(event.nativeEvent.contentOffset.x / width);
-              setCurrentImageIndex(index);
-            }}
-          >
-            {equipmentItem.images.map((image, index) => (
-              <Image
-                key={index}
-                source={{ uri: image }}
-                style={styles.equipmentImage}
-                resizeMode="cover"
-              />
-            ))}
-          </ScrollView>
-          
-          {/* Image Indicators */}
-          <View style={styles.imageIndicators}>
-            {equipmentItem.images.map((_, index) => (
-              <View
-                key={index}
-                style={[
-                  styles.indicator,
-                  currentImageIndex === index && styles.activeIndicator
-                ]}
-              />
-            ))}
+      <ScrollView showsVerticalScrollIndicator={false}>
+        <Image
+          source={{ uri: PLACEHOLDER_IMAGE }}
+          style={styles.heroImage}
+          resizeMode="cover"
+        />
+
+        <View style={styles.body}>
+          <Text style={styles.title}>{resource.name}</Text>
+          <Text style={styles.description}>{resource.description}</Text>
+
+          <View style={styles.ownerRow}>
+            <User size={18} color="#6B7280" />
+            <Text style={styles.ownerText}>{resource.ownerName}</Text>
           </View>
 
-          {/* Availability Badge */}
-          <View style={[styles.availabilityBadge, {
-            backgroundColor: equipmentItem.available ? '#A4D65E' : '#EF4444'
-          }]}>
-            <Text style={styles.availabilityText}>
-              {equipmentItem.available ? 'Available' : 'Not Available'}
-            </Text>
-          </View>
-        </View>
-
-        {/* Equipment Info */}
-        <View style={styles.infoSection}>
-          <Text style={styles.equipmentTitle}>{equipmentItem.title}</Text>
-          <Text style={styles.equipmentDescription}>{equipmentItem.description}</Text>
-
-          {/* Rating and Location */}
-          <View style={styles.ratingLocationRow}>
-            <View style={styles.ratingContainer}>
+          {resource.averageRating != null ? (
+            <View style={styles.ratingRow}>
               <Star size={16} color="#FFC107" fill="#FFC107" />
-              <Text style={styles.ratingText}>{equipmentItem.rating}</Text>
-              <Text style={styles.reviewCount}>({equipmentItem.reviewCount} reviews)</Text>
+              <Text style={styles.ratingText}>
+                {resource.averageRating.toFixed(1)} ({resource.reviewCount}{' '}
+                reviews)
+              </Text>
             </View>
-            <View style={styles.locationContainer}>
-              <MapPin size={16} color="#6B7280" />
-              <Text style={styles.locationText}>{equipmentItem.location}</Text>
-            </View>
-          </View>
+          ) : null}
 
-          {/* Owner Info */}
-          <View style={styles.ownerSection}>
-            <View style={styles.ownerInfo}>
-              <View style={styles.ownerAvatar}>
-                <User size={24} color="#6B7280" />
-              </View>
-              <View style={styles.ownerDetails}>
-                <Text style={styles.ownerName}>{equipmentItem.owner.name}</Text>
-                <View style={styles.ownerMeta}>
-                  <Text style={styles.ownerRole}>Equipment Owner</Text>
-                  {equipmentItem.owner.verified && (
-                    <>
-                      <Text style={styles.separator}>•</Text>
-                      <Shield size={12} color="#A4D65E" />
-                      <Text style={styles.verifiedText}>Verified</Text>
-                    </>
-                  )}
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Calendar size={20} color="#A4D65E" />
+              <Text style={styles.sectionTitle}>Reservation schedule</Text>
+            </View>
+            {schedule.length === 0 ? (
+              <Text style={styles.scheduleEmpty}>
+                No bookings yet — this resource is open.
+              </Text>
+            ) : (
+              schedule.map((b) => (
+                <View key={b.id} style={styles.scheduleItem}>
+                  <Text style={styles.scheduleStatus}>{b.status}</Text>
+                  <Text style={styles.scheduleTime}>
+                    {formatApiDateTime(b.startTime)} →{' '}
+                    {formatApiDateTime(b.endTime)}
+                  </Text>
                 </View>
-              </View>
-            </View>
-            <View style={styles.ownerRating}>
-              <Star size={14} color="#FFC107" fill="#FFC107" />
-              <Text style={styles.ownerRatingText}>{equipmentItem.owner.rating}</Text>
-            </View>
-          </View>
-
-          {/* Pricing */}
-          <View style={styles.pricingSection}>
-            <Text style={styles.sectionTitle}>Pricing</Text>
-            <View style={styles.pricingOptions}>
-              <TouchableOpacity
-                style={[
-                  styles.pricingOption,
-                  selectedDuration === 'hour' && styles.selectedPricingOption
-                ]}
-                onPress={() => setSelectedDuration('hour')}
-              >
-                <Clock size={16} color={selectedDuration === 'hour' ? '#FFFFFF' : '#6B7280'} />
-                <Text style={[
-                  styles.pricingOptionText,
-                  selectedDuration === 'hour' && styles.selectedPricingOptionText
-                ]}>
-                  Per Hour
-                </Text>
-                <Text style={[
-                  styles.pricingOptionPrice,
-                  selectedDuration === 'hour' && styles.selectedPricingOptionPrice
-                ]}>
-                  ₹{equipmentItem.pricePerHour}
-                </Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={[
-                  styles.pricingOption,
-                  selectedDuration === 'day' && styles.selectedPricingOption
-                ]}
-                onPress={() => setSelectedDuration('day')}
-              >
-                <Calendar size={16} color={selectedDuration === 'day' ? '#FFFFFF' : '#6B7280'} />
-                <Text style={[
-                  styles.pricingOptionText,
-                  selectedDuration === 'day' && styles.selectedPricingOptionText
-                ]}>
-                  Per Day
-                </Text>
-                <Text style={[
-                  styles.pricingOptionPrice,
-                  selectedDuration === 'day' && styles.selectedPricingOptionPrice
-                ]}>
-                  ₹{equipmentItem.pricePerDay}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Specifications */}
-          <View style={styles.specificationsSection}>
-            <Text style={styles.sectionTitle}>Specifications</Text>
-            <View style={styles.specGrid}>
-              <View style={styles.specItem}>
-                <Text style={styles.specLabel}>Brand</Text>
-                <Text style={styles.specValue}>{equipmentItem.specifications.brand}</Text>
-              </View>
-              <View style={styles.specItem}>
-                <Text style={styles.specLabel}>Model</Text>
-                <Text style={styles.specValue}>{equipmentItem.specifications.model}</Text>
-              </View>
-              <View style={styles.specItem}>
-                <Text style={styles.specLabel}>Year</Text>
-                <Text style={styles.specValue}>{equipmentItem.specifications.year}</Text>
-              </View>
-              {equipmentItem.specifications.power && (
-                <View style={styles.specItem}>
-                  <Text style={styles.specLabel}>Power</Text>
-                  <Text style={styles.specValue}>{equipmentItem.specifications.power}</Text>
-                </View>
-              )}
-              {equipmentItem.specifications.capacity && (
-                <View style={styles.specItem}>
-                  <Text style={styles.specLabel}>Capacity</Text>
-                  <Text style={styles.specValue}>{equipmentItem.specifications.capacity}</Text>
-                </View>
-              )}
-            </View>
-          </View>
-
-          {/* Features */}
-          <View style={styles.featuresSection}>
-            <Text style={styles.sectionTitle}>Features</Text>
-            <View style={styles.featuresList}>
-              {equipmentItem.features.map((feature, index) => (
-                <View key={index} style={styles.featureItem}>
-                  <View style={styles.featureDot} />
-                  <Text style={styles.featureText}>{feature}</Text>
-                </View>
-              ))}
-            </View>
+              ))
+            )}
           </View>
         </View>
       </ScrollView>
 
-      {/* Bottom Actions */}
-      <View style={styles.bottomActions}>
-        <TouchableOpacity style={styles.contactButton} onPress={handleContactOwner}>
-          <MessageCircle size={20} color="#A4D65E" />
-          <Text style={styles.contactButtonText}>Contact</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity
-          style={[styles.bookButton, !equipmentItem.available && styles.disabledBookButton]}
-          onPress={handleBookNow}
-          disabled={!equipmentItem.available}
-        >
-          <Text style={styles.bookButtonText}>
-            {equipmentItem.available ? 'Book Now' : 'Not Available'}
-          </Text>
-        </TouchableOpacity>
-      </View>
+      {role === 'farmer' ? (
+        <View style={styles.footer}>
+          <Pressable
+            style={[styles.reserveBtn, bookingLoading && styles.disabled]}
+            onPress={handleReserve}
+            disabled={bookingLoading}
+          >
+            {bookingLoading ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <>
+                <Tractor size={20} color="#FFFFFF" />
+                <Text style={styles.reserveText}>Reserve for tomorrow</Text>
+              </>
+            )}
+          </Pressable>
+        </View>
+      ) : null}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F5F7FA',
-  },
+  container: { flex: 1, backgroundColor: '#F5F7FA' },
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
   },
-  headerButton: {
-    padding: 8,
-  },
+  headerBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1F2937',
-  },
-  headerActions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  content: {
     flex: 1,
-  },
-  imageContainer: {
-    position: 'relative',
-    height: 250,
-  },
-  equipmentImage: {
-    width: width,
-    height: 250,
-  },
-  imageIndicators: {
-    position: 'absolute',
-    bottom: 16,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  indicator: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.5)',
-  },
-  activeIndicator: {
-    backgroundColor: '#FFFFFF',
-  },
-  availabilityBadge: {
-    position: 'absolute',
-    top: 16,
-    right: 16,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  availabilityText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  infoSection: {
-    backgroundColor: '#FFFFFF',
-    padding: 20,
-    marginTop: -20,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-  },
-  equipmentTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
+    fontSize: 17,
+    fontWeight: '700',
     color: '#1F2937',
-    marginBottom: 8,
+    textAlign: 'center',
   },
-  equipmentDescription: {
-    fontSize: 16,
-    color: '#6B7280',
-    lineHeight: 24,
-    marginBottom: 16,
-  },
-  ratingLocationRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  ratingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  ratingText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1F2937',
-  },
-  reviewCount: {
-    fontSize: 14,
-    color: '#6B7280',
-  },
-  locationContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  locationText: {
-    fontSize: 14,
-    color: '#6B7280',
-  },
-  ownerSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
+  heroImage: { width: '100%', height: 220 },
+  body: { padding: 20, gap: 12 },
+  title: { fontSize: 24, fontWeight: '800', color: '#1F2937' },
+  description: { fontSize: 15, lineHeight: 22, color: '#4B5563' },
+  ownerRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  ownerText: { fontSize: 14, color: '#6B7280', fontWeight: '500' },
+  ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  ratingText: { fontSize: 14, color: '#1F2937', fontWeight: '600' },
+  section: {
+    marginTop: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
     padding: 16,
-    marginBottom: 24,
+    gap: 10,
   },
-  ownerInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  sectionTitle: { fontSize: 16, fontWeight: '700', color: '#1F2937' },
+  scheduleEmpty: { fontSize: 14, color: '#9CA3AF' },
+  scheduleItem: {
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
   },
-  ownerAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  ownerDetails: {
-    flex: 1,
-  },
-  ownerName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1F2937',
-    marginBottom: 4,
-  },
-  ownerMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  ownerRole: {
-    fontSize: 12,
-    color: '#6B7280',
-  },
-  separator: {
-    fontSize: 12,
-    color: '#6B7280',
-  },
-  verifiedText: {
-    fontSize: 12,
-    color: '#A4D65E',
-    fontWeight: '500',
-  },
-  ownerRating: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  ownerRatingText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1F2937',
-  },
-  pricingSection: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1F2937',
-    marginBottom: 12,
-  },
-  pricingOptions: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  pricingOption: {
-    flex: 1,
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
+  scheduleStatus: { fontSize: 12, fontWeight: '700', color: '#A16207' },
+  scheduleTime: { fontSize: 13, color: '#6B7280', marginTop: 2 },
+  footer: {
     padding: 16,
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  selectedPricingOption: {
-    backgroundColor: '#A4D65E',
-    borderColor: '#A4D65E',
-  },
-  pricingOptionText: {
-    fontSize: 14,
-    color: '#6B7280',
-    marginTop: 8,
-    marginBottom: 4,
-  },
-  selectedPricingOptionText: {
-    color: '#FFFFFF',
-  },
-  pricingOptionPrice: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1F2937',
-  },
-  selectedPricingOptionPrice: {
-    color: '#FFFFFF',
-  },
-  specificationsSection: {
-    marginBottom: 24,
-  },
-  specGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  specItem: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 8,
-    padding: 12,
-    width: '48%',
-  },
-  specLabel: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginBottom: 4,
-  },
-  specValue: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1F2937',
-  },
-  featuresSection: {
-    marginBottom: 24,
-  },
-  featuresList: {
-    gap: 8,
-  },
-  featureItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  featureDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#A4D65E',
-  },
-  featureText: {
-    fontSize: 14,
-    color: '#1F2937',
-  },
-  bottomActions: {
-    flexDirection: 'row',
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
     borderTopWidth: 1,
     borderTopColor: '#E5E7EB',
-    gap: 12,
   },
-  contactButton: {
+  reserveBtn: {
+    backgroundColor: '#A4D65E',
+    borderRadius: 14,
+    paddingVertical: 16,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    gap: 8,
-    borderWidth: 1,
-    borderColor: '#A4D65E',
+    gap: 10,
   },
-  contactButtonText: {
-    color: '#A4D65E',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  bookButton: {
-    flex: 1,
+  disabled: { opacity: 0.7 },
+  reserveText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
+  errorText: { fontSize: 16, color: '#6B7280', marginBottom: 16 },
+  backBtn: {
     backgroundColor: '#A4D65E',
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  disabledBookButton: {
-    backgroundColor: '#D1D5DB',
-  },
-  bookButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  errorContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 20,
-  },
-  errorText: {
-    fontSize: 18,
-    color: '#6B7280',
-    marginBottom: 20,
-  },
-  backButton: {
-    backgroundColor: '#A4D65E',
-    borderRadius: 12,
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
     paddingVertical: 12,
+    borderRadius: 10,
   },
-  backButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
+  backBtnText: { color: '#FFFFFF', fontWeight: '600' },
 });

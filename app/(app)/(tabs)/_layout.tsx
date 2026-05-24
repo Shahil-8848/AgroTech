@@ -1,7 +1,17 @@
 import { Tabs } from 'expo-router';
-import { Chrome as Home, ShoppingBag, Users, User } from 'lucide-react-native';
+import {
+  Chrome as Home,
+  ClipboardList,
+  ShoppingBag,
+  User,
+} from 'lucide-react-native';
+import { useAuthStore } from '@/store/authStore';
 
 export default function TabLayout() {
+  const role = useAuthStore((s) => s.role);
+  const showBookings =
+    role === 'farmer' || role === 'owner' || role === 'admin';
+
   return (
     <Tabs
       screenOptions={{
@@ -16,10 +26,7 @@ export default function TabLayout() {
         },
         tabBarActiveTintColor: '#A4D65E',
         tabBarInactiveTintColor: '#6B7280',
-        tabBarLabelStyle: {
-          fontSize: 12,
-          fontWeight: '600',
-        },
+        tabBarLabelStyle: { fontSize: 12, fontWeight: '600' },
       }}
     >
       <Tabs.Screen
@@ -33,14 +40,20 @@ export default function TabLayout() {
         name="marketplace"
         options={{
           title: 'Marketplace',
-          tabBarIcon: ({ size, color }) => <ShoppingBag size={size} color={color} />,
+          tabBarIcon: ({ size, color }) => (
+            <ShoppingBag size={size} color={color} />
+          ),
+          href: role === 'admin' ? null : '/marketplace',
         }}
       />
       <Tabs.Screen
-        name="community"
+        name="bookings"
         options={{
-          title: 'Community',
-          tabBarIcon: ({ size, color }) => <Users size={size} color={color} />,
+          title: 'Bookings',
+          tabBarIcon: ({ size, color }) => (
+            <ClipboardList size={size} color={color} />
+          ),
+          href: showBookings ? '/bookings' : null,
         }}
       />
       <Tabs.Screen

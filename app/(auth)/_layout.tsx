@@ -1,8 +1,8 @@
+import { Redirect, Stack } from 'expo-router';
 import { LoadingScreen } from '@/components/common/LoadingScreen';
 import { useAuthStore } from '@/store/authStore';
-import { Redirect } from 'expo-router';
 
-export default function Index() {
+export default function AuthLayout() {
   const { isAuthenticated, isHydrating } = useAuthStore();
 
   if (isHydrating) {
@@ -13,5 +13,11 @@ export default function Index() {
     return <Redirect href="/(app)/(tabs)" />;
   }
 
-  return <Redirect href="/(auth)/welcome" />;
+  return (
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="welcome" />
+      <Stack.Screen name="login" />
+      <Stack.Screen name="register" />
+    </Stack>
+  );
 }

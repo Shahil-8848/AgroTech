@@ -1,0 +1,12 @@
+import { useEffect } from 'react';
+import { useAuthStore } from '@/store/authStore';
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const hydrate = useAuthStore((state) => state.hydrate);
+
+  useEffect(() => {
+    hydrate();
+  }, [hydrate]);
+
+  return <>{children}</>;
+}
