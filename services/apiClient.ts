@@ -67,6 +67,13 @@ export async function apiRequest<T>(
       }
     }
 
+    console.log(`[API Request] ${method} ${API_BASE_URL}${API_PREFIX}${path}`, body !== undefined ? JSON.stringify(body) : '');
+    const token = auth ? accessTokenGetter() : null;
+    if (auth && token) {
+      // Log token prefix for debugging auth issues
+      console.log(`[API Auth] Using token starting with: ${token.substring(0, 15)}...`);
+    }
+
     return fetch(`${API_BASE_URL}${API_PREFIX}${path}`, {
       method,
       headers,
@@ -74,7 +81,14 @@ export async function apiRequest<T>(
     });
   };
 
-  let response = await execute();
+  let response;
+  try {
+    response = await execute();
+    console.log(`[API Response Status] ${method} ${path} -> ${response.status} ${response.statusText}`);
+  } catch (fetchErr) {
+    console.error(`[API Network Error] ${method} ${path} failed:`, fetchErr);
+    throw fetchErr;
+  }
 
   if (
     response.status === 401 &&
@@ -82,14 +96,20 @@ export async function apiRequest<T>(
     !skipRefresh &&
     refreshHandler
   ) {
+    console.log(`[API Refresh] Token expired (401), attempting token refresh...`);
     const refreshed = await refreshHandler();
     if (refreshed) {
+      console.log(`[API Refresh] Token refreshed successfully. Retrying request...`);
       response = await execute();
+      console.log(`[API Response Status (Retry)] ${method} ${path} -> ${response.status} ${response.statusText}`);
+    } else {
+      console.warn(`[API Refresh] Token refresh failed.`);
     }
   }
 
   if (!response.ok) {
     const message = await parseErrorMessage(response);
+    console.error(`[API Error Response] ${method} ${path} -> ${response.status}: ${message}`);
     throw new ApiError(message, response.status);
   }
 

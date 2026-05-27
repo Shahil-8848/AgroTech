@@ -56,16 +56,18 @@ function mapBookingStatus(value: unknown): BookingStatus {
 
 export function mapBooking(raw: unknown): Booking {
   const r = asRecord(raw);
-  return {
+  const mapped: Booking = {
     id: pickNumber(r, 'id', 'Id', 'bookingId', 'BookingId'),
     resourceId: pickNumber(r, 'resourceId', 'ResourceId'),
-    userId: pickNumber(r, 'userId', 'UserId'),
+    userId: pickNumber(r, 'userId', 'UserId', 'farmerId', 'FarmerId'),
     startTime: pickString(r, 'startTime', 'StartTime'),
     endTime: pickString(r, 'endTime', 'EndTime'),
     status: mapBookingStatus(r.status ?? r.Status),
     resourceName: pickString(r, 'resourceName', 'ResourceName') || undefined,
-    farmerName: pickString(r, 'farmerName', 'FarmerName') || undefined,
+    farmerName: pickString(r, 'farmerName', 'FarmerName', 'userName', 'UserName') || undefined,
   };
+  console.log(`[Mapper] Mapped booking ID ${mapped.id}:`, JSON.stringify(mapped));
+  return mapped;
 }
 
 export function mapBookingList(raw: unknown): Booking[] {

@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { router } from 'expo-router';
 import {
   Calendar,
@@ -28,7 +29,13 @@ export function FarmerDashboard() {
   const bookingsLoading = useBookingStore((s) => s.isLoading);
   const fetchBookings = useBookingStore((s) => s.fetchBookings);
 
-  const myBookings = user ? bookingsForUser(bookings, user.id) : [];
+  // Fetch data on mount
+  useEffect(() => {
+    fetchResources();
+    fetchBookings();
+  }, []);
+
+  const myBookings = user ? bookingsForUser(bookings, user.id, user.fullName) : [];
   const featured = resources.slice(0, 3);
   const refreshing = resourcesLoading || bookingsLoading;
 

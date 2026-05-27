@@ -33,10 +33,10 @@ const MARKET_TABS: {
   title: string;
   icon: typeof Tractor;
 }[] = [
-  { id: 'equipment', title: 'Equipment', icon: Tractor },
-  { id: 'workers', title: 'Workers', icon: Users },
-  { id: 'inputs', title: 'Inputs', icon: ShoppingCart },
-];
+    { id: 'equipment', title: 'Equipment', icon: Tractor },
+    { id: 'workers', title: 'Workers', icon: Users },
+    { id: 'inputs', title: 'Inputs', icon: ShoppingCart },
+  ];
 
 export default function MarketplaceScreen() {
   const resources = useResourceStore((s) => s.resources);
@@ -275,7 +275,7 @@ export default function MarketplaceScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   hero: {
-    marginHorizontal: spacing.xl,
+
     marginTop: spacing.sm,
     marginBottom: spacing.lg,
     padding: spacing.xl,
@@ -299,7 +299,7 @@ const styles = StyleSheet.create({
   searchSection: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.xl,
+
     gap: spacing.md,
     marginBottom: spacing.lg,
   },
@@ -328,8 +328,8 @@ const styles = StyleSheet.create({
   },
   tabsRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    paddingHorizontal: spacing.xl,
+
+
     gap: spacing.sm,
     marginBottom: spacing.lg,
   },
@@ -345,13 +345,12 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   tabActive: { backgroundColor: colors.earth, borderColor: colors.earth },
-  tabText: { fontSize: 14, fontWeight: '600', color: colors.textSecondary },
+  tabText: { fontSize: 12, fontWeight: '600', color: colors.textSecondary },
   tabTextActive: { color: '#FFFFFF' },
   resultsBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.xl,
     marginBottom: spacing.md,
   },
   resultsCount: { fontSize: 14, fontWeight: '600', color: colors.textSecondary },

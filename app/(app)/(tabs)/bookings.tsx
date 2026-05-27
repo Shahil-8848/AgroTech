@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -7,6 +7,7 @@ import {
   RefreshControl,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -34,7 +35,9 @@ function statusColor(status: BookingStatus): string {
 export default function BookingsScreen() {
   const role = useAuthStore((s) => s.role);
   const user = useAuthStore((s) => s.user);
+  
   const resources = useResourceStore((s) => s.resources);
+  const fetchResources = useResourceStore((s) => s.fetchResources);
 
   const bookings = useBookingStore((s) => s.bookings);
   const pendingBookings = useBookingStore((s) => s.pendingBookings);
@@ -47,15 +50,17 @@ export default function BookingsScreen() {
   const updateStatus = useBookingStore((s) => s.updateStatus);
   const adminRemoveBooking = useBookingStore((s) => s.adminRemoveBooking);
 
+  // Tab for Owner & Farmer: 'pending' or 'history'
+  const [activeTab, setActiveTab] = useState<'pending' | 'history'>('pending');
+
   const load = () => {
+    fetchResources(); // Always pull resources for lookup and owner filtering
     if (role === 'admin') {
       fetchAdminOverview();
       return;
     }
     if (role === 'owner') {
       fetchPendingBookings();
-      fetchBookings();
-      return;
     }
     fetchBookings();
   };
@@ -94,7 +99,7 @@ export default function BookingsScreen() {
   const renderBooking = ({ item }: { item: Booking }) => (
     <View style={styles.card}>
       <View style={styles.cardHeader}>
-        <Text style={styles.cardTitle}>{resourceName(item.resourceId)}</Text>
+        <Text style={styles.cardTitle}>{item.resourceName || resourceName(item.resourceId)}</Text>
         <View
           style={[
             styles.statusBadge,
@@ -165,16 +170,40 @@ export default function BookingsScreen() {
     </View>
   );
 
-  const farmerList = user ? bookingsForUser(bookings, user.id) : [];
-  const ownerList =
-    role === 'owner' ? pendingBookings : bookings;
+  // Filter bookings for owner
+  const myResourceIds = useMemo(() => {
+    if (!user) return new Set<number>();
+    return new Set(resources.filter((r) => r.ownerId === user.id).map((r) => r.id));
+  }, [resources, user]);
 
-  const listData =
-    role === 'admin'
-      ? adminOverview
-      : role === 'owner'
-        ? ownerList
-        : farmerList;
+  const ownerPendingList = useMemo(() => {
+    return pendingBookings.filter((b) => b.resourceId === 0 || myResourceIds.has(b.resourceId));
+  }, [pendingBookings, myResourceIds]);
+
+  const ownerHistoryList = useMemo(() => {
+    return bookings.filter(
+      (b) => (b.resourceId === 0 || myResourceIds.has(b.resourceId)) && b.status !== 'Pending'
+    );
+  }, [bookings, myResourceIds]);
+
+  // Filter bookings for farmer
+  const farmerPendingList = useMemo(() => {
+    return user ? bookingsForUser(bookings, user.id, user.fullName).filter((b) => b.status === 'Pending') : [];
+  }, [bookings, user]);
+
+  const farmerHistoryList = useMemo(() => {
+    return user ? bookingsForUser(bookings, user.id, user.fullName).filter((b) => b.status !== 'Pending') : [];
+  }, [bookings, user]);
+
+  const listData = useMemo(() => {
+    if (role === 'admin') {
+      return adminOverview;
+    }
+    if (role === 'owner') {
+      return activeTab === 'pending' ? ownerPendingList : ownerHistoryList;
+    }
+    return activeTab === 'pending' ? farmerPendingList : farmerHistoryList;
+  }, [role, activeTab, adminOverview, ownerPendingList, ownerHistoryList, farmerPendingList, farmerHistoryList]);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -183,9 +212,31 @@ export default function BookingsScreen() {
         {role === 'admin'
           ? 'All platform reservations'
           : role === 'owner'
-            ? 'Pending and active rental requests'
+            ? 'Review and manage equipment reservations'
             : 'Your equipment reservations'}
       </Text>
+
+      {/* Tab Selector */}
+      {role === 'owner' || role === 'farmer' ? (
+        <View style={styles.tabBar}>
+          <TouchableOpacity
+            style={[styles.tabButton, activeTab === 'pending' && styles.tabButtonActive]}
+            onPress={() => setActiveTab('pending')}
+          >
+            <Text style={[styles.tabButtonText, activeTab === 'pending' && styles.tabButtonTextActive]}>
+              {role === 'owner' ? 'Pending Requests' : 'Pending Bookings'} ({role === 'owner' ? ownerPendingList.length : farmerPendingList.length})
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tabButton, activeTab === 'history' && styles.tabButtonActive]}
+            onPress={() => setActiveTab('history')}
+          >
+            <Text style={[styles.tabButtonText, activeTab === 'history' && styles.tabButtonTextActive]}>
+              {role === 'owner' ? 'Booking History' : 'My History'} ({role === 'owner' ? ownerHistoryList.length : farmerHistoryList.length})
+            </Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
@@ -201,14 +252,12 @@ export default function BookingsScreen() {
           keyExtractor={(item) =>
             'bookingId' in item ? String(item.bookingId) : String(item.id)
           }
-          renderItem={
-            role === 'admin'
-              ? (props) =>
-                  renderAdminRow({
-                    item: props.item as AdminBookingOverview,
-                  })
-              : renderBooking
-          }
+          renderItem={({ item }) => {
+            if (role === 'admin') {
+              return renderAdminRow({ item: item as AdminBookingOverview });
+            }
+            return renderBooking({ item: item as Booking });
+          }}
           contentContainerStyle={styles.list}
           refreshControl={
             <RefreshControl refreshing={isLoading} onRefresh={load} />
@@ -237,6 +286,34 @@ const styles = StyleSheet.create({
     marginTop: 4,
     marginBottom: 16,
     paddingHorizontal: 20,
+  },
+  // Tab styles
+  tabBar: {
+    flexDirection: 'row',
+    marginHorizontal: 20,
+    marginBottom: 16,
+    backgroundColor: '#E5E7EB',
+    borderRadius: 8,
+    padding: 3,
+  },
+  tabButton: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 6,
+  },
+  tabButtonActive: {
+    backgroundColor: '#FFFFFF',
+    elevation: 1,
+  },
+  tabButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#4B5563',
+  },
+  tabButtonTextActive: {
+    color: '#1F2937',
   },
   error: { color: '#B91C1C', paddingHorizontal: 20, marginBottom: 8 },
   loader: { marginTop: 40 },

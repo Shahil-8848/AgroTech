@@ -65,11 +65,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       refreshToken: response.refreshToken,
     };
 
+    // Set tokens first so any subsequent API requests can retrieve it from the store
+    set({ tokens });
+
     const user = await loadProfile(response.token, response);
     const role = toAppRole(user.role || response.role);
 
     set({
-      tokens,
       user,
       role,
       isAuthenticated: true,

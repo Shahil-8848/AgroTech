@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { router } from 'expo-router';
 import { ClipboardList, Package, Plus, RefreshCw, Wrench } from 'lucide-react-native';
 import {
@@ -33,9 +33,23 @@ export function OwnerDashboard() {
   const [submitting, setSubmitting] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
 
+  // Fetch data on mount
+  useEffect(() => {
+    fetchResources();
+    fetchPending();
+  }, []);
+
   const myResources = user
     ? selectOwnerResources(resources, user.id)
     : [];
+
+  const myResourceIds = useMemo(() => {
+    return new Set(myResources.map((r) => r.id));
+  }, [myResources]);
+
+  const myPendingBookings = useMemo(() => {
+    return pendingBookings.filter((b) => myResourceIds.has(b.resourceId));
+  }, [pendingBookings, myResourceIds]);
 
   const handleCreateResource = async () => {
     if (!user) return;
@@ -109,7 +123,7 @@ export function OwnerDashboard() {
         </View>
         <View style={styles.statCard}>
           <ClipboardList size={22} color="#A4D65E" />
-          <Text style={styles.statValue}>{pendingBookings.length}</Text>
+          <Text style={styles.statValue}>{myPendingBookings.length}</Text>
           <Text style={styles.statLabel}>Pending requests</Text>
         </View>
       </View>
@@ -167,6 +181,64 @@ export function OwnerDashboard() {
         <Plus size={20} color="#FFFFFF" />
         <Text style={styles.addButtonText}>Browse marketplace</Text>
       </TouchableOpacity>
+
+      <Modal
+        visible={addModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setAddModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>List New Equipment</Text>
+
+            {validationError ? (
+              <Text style={styles.errorText}>{validationError}</Text>
+            ) : null}
+
+            <Text style={styles.inputLabel}>Name (min 6 characters)</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g. John Deere Tractor 5050D"
+              value={newName}
+              onChangeText={setNewName}
+              maxLength={100}
+            />
+
+            <Text style={styles.inputLabel}>Description (min 10 characters)</Text>
+            <TextInput
+              style={[styles.input, styles.textArea]}
+              placeholder="Provide a detailed description of your tool/equipment, availability, specifications..."
+              value={newDescription}
+              onChangeText={setNewDescription}
+              multiline={true}
+              numberOfLines={4}
+              maxLength={500}
+            />
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.cancelBtn]}
+                onPress={() => setAddModalVisible(false)}
+                disabled={submitting}
+              >
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.submitBtn]}
+                onPress={handleCreateResource}
+                disabled={submitting}
+              >
+                {submitting ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <Text style={styles.submitBtnText}>List Equipment</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -215,19 +287,34 @@ const styles = StyleSheet.create({
   },
   cardTitle: { fontSize: 18, fontWeight: '600', color: '#1F2937' },
   cardBody: { fontSize: 14, color: '#6B7280', lineHeight: 20 },
-  primaryButton: {
+  cardActionsRow: {
+    flexDirection: 'row',
+    alignSelf: 'stretch',
+    gap: 10,
     marginTop: 8,
+  },
+  primaryButton: {
     backgroundColor: '#A16207',
     borderRadius: 12,
     paddingVertical: 14,
-    paddingHorizontal: 20,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    alignSelf: 'stretch',
     justifyContent: 'center',
   },
   primaryButtonText: { color: '#FFFFFF', fontWeight: '600' },
+  secondaryButton: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#A16207',
+    borderRadius: 12,
+    paddingVertical: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    justifyContent: 'center',
+  },
+  secondaryButtonText: { color: '#A16207', fontWeight: '600' },
   listSection: { paddingHorizontal: 20, marginTop: 20, gap: 8 },
   listTitle: { fontSize: 16, fontWeight: '600', color: '#1F2937' },
   listItem: {
@@ -251,4 +338,79 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   addButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 20,
+    width: '100%',
+    maxWidth: 400,
+    gap: 12,
+    elevation: 5,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1F2937',
+    marginBottom: 4,
+  },
+  inputLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#4B5563',
+    marginTop: 4,
+  },
+  input: {
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 15,
+    color: '#1F2937',
+  },
+  textArea: {
+    height: 100,
+    textAlignVertical: 'top',
+  },
+  errorText: {
+    color: '#DC2626',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 12,
+  },
+  modalBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelBtn: {
+    backgroundColor: '#F3F4F6',
+  },
+  cancelBtnText: {
+    color: '#4B5563',
+    fontWeight: '600',
+  },
+  submitBtn: {
+    backgroundColor: '#A16207',
+  },
+  submitBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
 });
+
